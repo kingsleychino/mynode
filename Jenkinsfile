@@ -2,7 +2,10 @@ pipeline {
     agent any
 
     environment {
-        AWS_CREDS = credentials('aws-jenkins-creds')
+        withCredentials([[
+            $Class: 'AmazonWebServicesCredentialsBinding',
+            AWS_CREDS = credentials('aws-jenkins-creds')
+        ]])
     }
 
     stages {
