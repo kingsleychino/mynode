@@ -7,61 +7,51 @@ pipeline {
     }
 
     environment {
-        TF_DIR       = 'terraform'
-        ECR_REPO     = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
-        AWS_REGION   = "us-east-1"
-        DOCKER_TAG   = "${BUILD_NUMBER}"
+        ECR_REPO   = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
+        AWS_REGION = "us-east-1"
+        DOCKER_TAG = "${BUILD_NUMBER}"
+        TF_DIR     = "terraform"
+        TF_COMMON  = "-var-file=${TF_VARS}"
     }
 
     stages {
-        stage('Docker Build & Push') {
+        stage('Build & Push') {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-jenkins-creds'
                 ]]) {
                     sh '''
-                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
-
+                        aws ecr get-login-password --region $AWS_REGION \
+                            | docker login --username AWS --password-stdin $ECR_REPO
                         docker build -t $ECR_REPO:$DOCKER_TAG -t $ECR_REPO:latest .
-                        docker push $ECR_REPO:$DOCKER_TAG
-                        docker push $ECR_REPO:latest
+                        docker push $ECR_REPO:$DOCKER_TAG $ECR_REPO:latest
                     '''
                 }
             }
         }
 
-        stage('Terraform Init') {
+        stage('Terraform') {
             steps {
                 dir(TF_DIR) {
                     sh """
                         terraform init -input=false
-                        terraform workspace select ${params.WORKSPACE} || terraform workspace new ${params.WORKSPACE}
+                        terraform workspace select ${params.WORKSPACE} 2>/dev/null \
+                            || terraform workspace new ${params.WORKSPACE}
+                        terraform plan ${TF_COMMON} -out=tfplan -detailed-exitcode | tee tfplan.txt || true
                     """
-                }
-            }
-        }
-
-        stage('Plan') {
-            steps {
-                dir(TF_DIR) {
-                    sh "terraform plan -var-file=${TF_VARS} -out=tfplan -detailed-exitcode || true"
-                    sh "terraform show -no-color tfplan > tfplan.txt"
                     archiveArtifacts 'tfplan.txt'
-                }
-            }
-        }
 
-        stage('Approval & Execute') {
-            when { expression { params.ACTION != 'plan' } }
-            steps {
-                input message: "Approve ${params.ACTION}?", ok: "Proceed",
-                      parameters: [text(name: 'Preview', defaultValue: readFile("${TF_DIR}/tfplan.txt"))]
+                    script {
+                        if (params.ACTION != 'plan') {
+                            input message: "Approve ${params.ACTION}?", ok: "Proceed",
+                                  parameters: [text(name: 'Preview', defaultValue: readFile('tfplan.txt'))]
 
-                dir(TF_DIR) {
-                    sh params.ACTION == 'apply'
-                        ? "terraform apply -auto-approve tfplan"
-                        : "terraform destroy -var-file=${TF_VARS} -auto-approve"
+                            sh params.ACTION == 'apply'
+                                ? "terraform apply -auto-approve tfplan"
+                                : "terraform destroy ${TF_COMMON} -auto-approve"
+                        }
+                    }
                 }
             }
         }
@@ -69,7 +59,7 @@ pipeline {
 
     post {
         always  { cleanWs() }
-        success { echo "✅ Pushed: $ECR_REPO:$DOCKER_TAG & latest" }
-        failure { echo "❌ Build failed!" }
+        success { echo "✅ Pushed $ECR_REPO:$DOCKER_TAG" }
+        failure { echo "❌ Pipeline failed!" }
     }
 }
