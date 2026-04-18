@@ -7,8 +7,8 @@ resource "aws_ecs_task_definition" "TD" {
   memory                   = 2048
   container_definitions = jsonencode([
     {
-      name      = "nginx"
-      image     = "nginx:latest"
+      name      = "mynode"
+      image     = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode:latest"
       cpu       = 1024
       memory    = 512
       essential = true

@@ -12,7 +12,7 @@ resource "aws_ecs_service" "service" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.TG.arn
-    container_name   = "nginx"
+    container_name   = "mynode"
     container_port   = 80
   }
 
