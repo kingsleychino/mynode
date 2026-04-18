@@ -4,11 +4,13 @@ pipeline {
     parameters {
         choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform action')
         string(name: 'WORKSPACE', defaultValue: 'default', description: 'Terraform workspace')
+        text(name: 'Preview', defaultValue: "See tfplan artifact after plan stage")
     }
 
     environment {
         ECR_REPO   = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
         AWS_REGION = "us-east-1"
+        TF_DIR = "terraform"
     }
 
     stages {
@@ -18,15 +20,22 @@ pipeline {
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-jenkins-creds'
                 ]]) {
-                    dir(TF_DIR) {
+                    dir(env.TF_DIR) {
                         sh """
                             terraform init -input=false
+
+                            terraform workspace select ${params.WORKSPACE} 2>/dev/null || \
+                            terraform workspace new ${params.WORKSPACE}
+
+                            terraform plan -out=tfplan
                         """
 
                         script {
                             if (params.ACTION != 'plan') {
                                 input message: "Approve ${params.ACTION}?", ok: "Proceed",
-                                      parameters: [text(name: 'Preview', defaultValue: readFile('tfplan.txt'))]
+                                    parameters: [
+                                        text(name: 'Preview', defaultValue: "See tfplan in workspace")
+                                    ]
 
                                 sh params.ACTION == 'apply'
                                     ? "terraform apply -auto-approve tfplan"
@@ -40,8 +49,8 @@ pipeline {
     }
 
     post {
+        success { echo "Pipeline succeeded" }
+        failure { echo "Pipeline failed" }
         always  { cleanWs() }
-        success { echo "✅ Pushed $ECR_REPO:$DOCKER_TAG" }
-        failure { echo "❌ Pipeline failed!" }
     }
 }
