@@ -9,8 +9,8 @@ pipeline {
     environment {
         ECR_REPO   = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
         AWS_REGION = "us-east-1"
-        TF_DIR     = "terraform"
-        TF_COMMON  = "-var-file=${TF_VARS}"
+        TF_VARS = "dev.tfvars"
+        TF_COMMON = "-var-file=${TF_VARS}"
     }
 
     stages {
