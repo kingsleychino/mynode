@@ -9,8 +9,6 @@ pipeline {
     environment {
         ECR_REPO   = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
         AWS_REGION = "us-east-1"
-        TF_VARS = "dev.tfvars"
-        TF_COMMON = "-var-file=${TF_VARS}"
     }
 
     stages {
@@ -23,11 +21,7 @@ pipeline {
                     dir(TF_DIR) {
                         sh """
                             terraform init -input=false
-                            terraform workspace select ${params.WORKSPACE} 2>/dev/null \
-                                || terraform workspace new ${params.WORKSPACE}
-                            terraform plan ${TF_COMMON} -out=tfplan -detailed-exitcode | tee tfplan.txt || true
                         """
-                        archiveArtifacts 'tfplan.txt'
 
                         script {
                             if (params.ACTION != 'plan') {
@@ -36,7 +30,7 @@ pipeline {
 
                                 sh params.ACTION == 'apply'
                                     ? "terraform apply -auto-approve tfplan"
-                                    : "terraform destroy ${TF_COMMON} -auto-approve"
+                                    : "terraform destroy -auto-approve"
                             }
                         }
                     }
