@@ -1,7 +1,13 @@
 pipeline {
     agent any
 
+    parameters {
+        choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform action')
+        string(name: 'WORKSPACE', defaultValue: 'default', description: 'Terraform workspace')
+    }
+
     environment {
+        TF_DIR   = 'terraform'
         DOCKER_TAG = "${BUILD_NUMBER}"
         ECR_REPO = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
         AWS_REGION = "us-east-1"
@@ -34,6 +40,53 @@ pipeline {
                     docker push $ECR_REPO:$DOCKER_TAG
                     docker push $ECR_REPO:latest
                     '''
+                }
+            }
+        }
+
+        stage('Initialize') {
+            steps {
+                dir("${TF_DIR}") {
+                    sh """
+                        terraform init
+                        terraform workspace select ${params.WORKSPACE} || terraform workspace new ${params.WORKSPACE}
+                    """
+                }
+            }
+        }
+
+        stage('Plan') {
+            steps {
+                dir("${TF_DIR}") {
+                    sh "terraform plan -var-file=${TF_VARS} -out=tfplan -detailed-exitcode || true"
+                    sh "terraform show -no-color tfplan > tfplan.txt"
+                    archiveArtifacts 'tfplan.txt'
+                }
+            }
+        }
+
+        stage('Approval') {
+            when { expression { params.ACTION != 'plan' } }
+            steps {
+                script {
+                    def planPreview = readFile("${TF_DIR}/tfplan.txt")
+                    input message: "Approve ${params.ACTION}?", ok: "Proceed",
+                          parameters: [text(name: 'Preview', defaultValue: planPreview)]
+                }
+            }
+        }
+
+        stage('Execute') {
+            when { expression { params.ACTION != 'plan' } }
+            steps {
+                dir("${TF_DIR}") {
+                    script {
+                        if (params.ACTION == 'apply') {
+                            sh "terraform apply -auto-approve tfplan"
+                        } else if (params.ACTION == 'destroy') {
+                            sh "terraform destroy -var-file=${TF_VARS} -auto-approve"
+                        }
+                    }
                 }
             }
         }
