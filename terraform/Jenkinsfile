@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'hashicorp/terraform:1.7.5'
+            args '-u root' // avoids permission issues
+        }
+    }
 
     parameters {
         choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform action')
@@ -10,7 +15,7 @@ pipeline {
     environment {
         ECR_REPO   = "503499294473.dkr.ecr.us-east-1.amazonaws.com/mynode"
         AWS_REGION = "us-east-1"
-        TF_DIR = "terraform"
+        TF_DIR     = "terraform"
     }
 
     stages {
@@ -20,26 +25,28 @@ pipeline {
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-jenkins-creds'
                 ]]) {
+
                     dir(env.TF_DIR) {
-                        sh """
+
+                        sh '''
                             terraform init -input=false
 
-                            terraform workspace select ${params.WORKSPACE} 2>/dev/null || \
-                            terraform workspace new ${params.WORKSPACE}
+                            terraform workspace select ${WORKSPACE} 2>/dev/null || \
+                            terraform workspace new ${WORKSPACE}
 
                             terraform plan -out=tfplan
-                        """
+                        '''
 
                         script {
                             if (params.ACTION != 'plan') {
-                                input message: "Approve ${params.ACTION}?", ok: "Proceed",
-                                    parameters: [
-                                        text(name: 'Preview', defaultValue: "See tfplan in workspace")
-                                    ]
 
-                                sh params.ACTION == 'apply'
-                                    ? "terraform apply -auto-approve tfplan"
-                                    : "terraform destroy -auto-approve"
+                                input message: "Approve ${params.ACTION}?"
+
+                                if (params.ACTION == 'apply') {
+                                    sh "terraform apply -auto-approve tfplan"
+                                } else {
+                                    sh "terraform destroy -auto-approve"
+                                }
                             }
                         }
                     }
